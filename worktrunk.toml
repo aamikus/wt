@@ -1,0 +1,10 @@
+worktree-path = "{{ repo_path }}/.claude/worktrees/{{ branch | sanitize }}"
+
+[[post-start]]
+copy = "wtcore step copy-ignored --require-include"
+
+[[post-start]]
+env = "wt up {{ worktree_path }}"
+
+[pre-remove]
+env = "wt _purge {{ worktree_name }}"

@@ -1,0 +1,6 @@
+#!/bin/sh
+# runs wt's typescript entry under bun; WT_BUN overrides the runtime
+self=$(readlink -f "$0")
+bun=${WT_BUN:-$HOME/.bun/bin/bun}
+[ -x "$bun" ] || bun=bun
+WT_SELF=$self exec "$bun" "$(dirname "$self")/src/main.ts" "$@"
