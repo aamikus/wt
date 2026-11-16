@@ -1,10 +1,10 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { config, HOME, PROFILES_DIR } from './env.ts';
-import { generic } from './generic.ts';
+import { basename, join } from 'node:path';
+import { config, HOME, REPOS_DIR } from './env.ts';
+import { configRepo, devCommand, fromConfig, generic, isWeb, workspacePackages, type RepoConfig } from './config.ts';
 import { get, names } from './state.ts';
-import { canonical, type Wt } from './worktree.ts';
-import { shq } from './util.ts';
+import { canonical, knownRepos, type Wt } from './worktree.ts';
+import { die } from './util.ts';
 
 export interface Service {
   pkg?: string;
@@ -19,8 +19,13 @@ export interface Service {
   share?: string;
   // a stable offset inside the slot's app-server port block
   portOffset?: number;
+  // takes a port from that block, having none of its own
+  autoPort?: boolean;
   command?(w: Wt, ports: Ports): string | undefined | false;
-  env?(ports: Ports): Record<string, string>;
+  // the variables its process gets; writes the env files the service reads
+  env?(w: Wt, ports: Ports): Record<string, string>;
+  // a command run once per worktree before the service first starts
+  setup?: string;
 }
 
 // where a service listens, and where its clients reach it: the two differ for a service the
@@ -28,11 +33,6 @@ export interface Service {
 export interface Ports {
   listen(s: string): number;
   addr(s: string): number;
-}
-
-export interface Login {
-  enabled(): boolean;
-  run(w: Wt, device: string, tag: string, openUrl: (device: string, url: string) => boolean): Promise<boolean>;
 }
 
 // an expo dev client: built once per native fingerprint, run on a simulator and an emulator
@@ -50,12 +50,13 @@ export interface Mobile {
   builder: string;
   builderDerived: string;
   // commands the builder runs after mirroring a worktree, then the expo prebuild per platform
-  builderSetup: string[][];
-  prebuild: { ios: string[]; android: string[] };
+  builderSetup: string[];
+  prebuild: { ios: string; android: string };
   metro: string;
   // services an emulator reaches through adb reverse
   reverse: string[];
-  login?: Login;
+  // a bash script that signs the app in on a new device, given the device as $1 and sim or emu as $2
+  login?: string;
 }
 
 export interface RepoProfile {
@@ -64,7 +65,6 @@ export interface RepoProfile {
   repo?: string;
   // profiles beyond bare and code, each a list of services
   profiles: Record<string, string[]>;
-  describe: string;
   services: Record<string, Service>;
   // turbo: per-task output from turbo's --log-file; pane: the dev window's output in dev.log
   logs: 'turbo' | 'pane';
@@ -74,7 +74,6 @@ export interface RepoProfile {
   // a run's command, undefined when nothing runs, false when it cannot run. pkgs: for a turbo
   // repo, the packages whose dev task this run starts
   dev(w: Wt, services: string[], ports: Ports, pkgs: string[]): string | undefined | false;
-  validate?(services: string[]): string | undefined;
   mobile?: Mobile;
 }
 
@@ -82,11 +81,19 @@ export const BASE_PROFILES = ['bare', 'code'];
 
 export const registry: RepoProfile[] = [];
 
-export async function loadProfiles(dir = PROFILES_DIR) {
+// a repo's config is REPOS_DIR/<name>.toml; one for a repo this machine has no checkout of is skipped
+export function loadProfiles(dir = REPOS_DIR, candidates = knownRepos()) {
   if (!existsSync(dir)) return;
-  for (const d of readdirSync(dir).sort()) {
-    const f = join(dir, d, 'index.ts');
-    if (existsSync(f)) registry.push((await import(f)).default as RepoProfile);
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.toml')).sort()) {
+    let cfg: RepoConfig;
+    try {
+      cfg = Bun.TOML.parse(readFileSync(join(dir, f), 'utf8')) as RepoConfig;
+    } catch (e) {
+      die(`${join(dir, f)}: ${(e as Error).message}`);
+    }
+    if (cfg.repo === undefined && cfg.remote === undefined) die(`${join(dir, f)}: set repo or remote`);
+    const repo = configRepo(cfg, candidates);
+    if (repo) registry.push(fromConfig(basename(f, '.toml'), cfg, dir, repo));
   }
 }
 
@@ -95,18 +102,25 @@ export const profileFor = (repo: string, path = repo) => {
   return discoverApps(profile, path);
 };
 
+// the port-block offset key of a service
+export const offsetKey = (name: string, s: Service) => s.pkg ?? `service:${name}`;
+
+// adds the checkout's workspace packages that have a dev script as services, each in its own
+// window; in a turbo repo a configured package without a web server joins the shared turbo run
+// instead. a service without a port of its own that listens takes one from the slot's port block,
+// at an offset kept stable per worktree
 function discoverApps(profile: RepoProfile, path: string): RepoProfile {
-  const dir = join(path, 'apps');
-  if (profile.logs !== 'turbo' || !existsSync(dir)) return profile;
   const services: Record<string, Service> = { ...profile.services };
   const profiles = { ...profile.profiles };
   const state = names().find((n) => get(n, 'path') && canonical(get(n, 'path')) === canonical(path));
   const offsets: Record<string, number> = JSON.parse(state ? get(state, 'ports') || '{}' : '{}');
-  for (const app of readdirSync(dir).sort()) {
-    const manifest = join(dir, app, 'package.json');
-    if (!existsSync(manifest)) continue;
-    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string; scripts?: { dev?: string } };
-    if (!pkg.name || !pkg.scripts?.dev) continue;
+  const blockPort = (name: string, s: Service): Service => {
+    const offset = (offsets[offsetKey(name, s)] ??= Math.max(-1, ...Object.values(offsets)) + 1);
+    return { ...s, port: (slot) => 10000 + slot * 1000 + offset, portOffset: offset, autoPort: false, reserves: true };
+  };
+  for (const pkg of workspacePackages(path)) {
+    if (!pkg.dev) continue;
+    const app = basename(pkg.dir);
     const existing = Object.entries(services).find(([, s]) => s.pkg === pkg.name)?.[0];
     const service = existing ?? app;
     const mobile = service === profile.mobile?.metro
@@ -114,34 +128,24 @@ function discoverApps(profile: RepoProfile, path: string): RepoProfile {
       : undefined;
     profiles[app] ??= profiles[service] ?? mobile ?? [service];
     profiles[service] ??= profiles[app];
-    const vite = /^vite\b/.test(pkg.scripts.dev) && !/^vite\s+build\b/.test(pkg.scripts.dev);
-    const web = /^next\s+dev\b/.test(pkg.scripts.dev) || vite;
-    if (existing && !web) continue;
-    let offset: number | undefined;
-    if (web) {
-      offset = offsets[pkg.name] ?? Math.max(-1, ...Object.values(offsets)) + 1;
-      offsets[pkg.name] = offset;
-    }
+    const web = isWeb(pkg.dev);
+    const own = services[service];
+    if (own?.command || (own && !web && profile.logs === 'turbo')) continue;
+    let s: Service = { ...own, pkg: pkg.name, autoPort: !own?.port && (web || !!own?.autoPort) };
+    if (s.autoPort) s = blockPort(service, s);
+    const listens = !!s.port;
     services[service] = {
-      ...services[service],
-      pkg: pkg.name,
-      port: offset === undefined ? undefined : (slot) => 10000 + slot * 1000 + offset,
-      portOffset: offset,
-      fixed: false,
-      reserves: web,
-      command(_w, ports) {
-        const port = web ? ports.listen(service) : undefined;
-        const env = { ...(port === undefined ? {} : { PORT: String(port) }), ...services[service].env?.(ports) };
-        const prefix = Object.entries(env).map(([k, v]) => `${k}=${shq(v)} `).join('');
-        return `${prefix}exec pnpm --filter ${shq(pkg.name!)} dev${port === undefined ? '' : ` --port ${port}${vite ? ' --strictPort' : ''}`}`;
+      ...s,
+      command: (w, ports) => {
+        const port = listens ? ports.listen(service) : undefined;
+        // a configured service's env carries its port itself
+        const env = s.env ? s.env(w, ports) : port === undefined ? {} : { PORT: String(port) };
+        return devCommand(path, pkg.dir, pkg.dev!, env, port);
       },
     };
   }
-  return {
-    ...profile,
-    profiles,
-    services,
-  };
+  for (const [name, s] of Object.entries(services)) if (s.autoPort) services[name] = blockPort(name, s);
+  return { ...profile, profiles, services };
 }
 
 // the configured repository used outside any checkout

@@ -1,26 +1,21 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { say } from './util.ts';
 
 const MARK = '# managed by wt';
 
-// a gitignored override the dev servers apply last; a file wt did not write is left alone
-export function pin(dir: string, rel: string, line: string) {
+// sets KEY=value lines in an env file: a missing or wt-written file is written whole, any other
+// file, such as one pulled from a secrets manager, has just these keys replaced or appended
+export function writeEnv(dir: string, rel: string, vars: Record<string, string>) {
   const f = join(dir, rel);
-  if (existsSync(f) && !readFileSync(f, 'utf8').split('\n').some((l) => l.startsWith(MARK))) {
-    say(`dev: ${rel} is not wt's, leaving it`);
+  const lines = Object.entries(vars).map(([k, v]) => `${k}=${v}`);
+  if (!existsSync(f) || readFileSync(f, 'utf8').startsWith(MARK)) {
+    writeFileSync(f, `${[MARK, ...lines].join('\n')}\n`);
     return;
   }
-  writeFileSync(f, `${MARK}\n${line}\n`);
-}
-
-// a key the pulled env file defines can only move inside that file; a re-pull resets it and
-// the next up writes it again
-export function pinPulled(dir: string, rel: string, key: string, value: string) {
-  const f = join(dir, rel);
-  if (!existsSync(f)) return;
-  const text = readFileSync(f, 'utf8');
-  const re = new RegExp(`^${key}=.*$`, 'gm');
-  if (re.test(text)) writeFileSync(f, text.replace(re, `${key}=${value}`));
-  else appendFileSync(f, `${key}=${value}\n`);
+  let text = readFileSync(f, 'utf8');
+  for (const [k, v] of Object.entries(vars)) {
+    const re = new RegExp(`^${k}=.*$`, 'gm');
+    text = re.test(text) ? text.replace(re, `${k}=${v}`) : `${text.replace(/\n?$/, '\n')}${k}=${v}\n`;
+  }
+  writeFileSync(f, text);
 }

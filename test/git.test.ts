@@ -389,7 +389,7 @@ describe('discovery', () => {
     mkdirSync(join(p, 'apps', 'retell'), { recursive: true });
     writeFileSync(join(p, 'apps', 'retell', 'package.json'), JSON.stringify({ name: '@test/retell', scripts: { dev: 'next dev' } }));
     registry.push({
-      repo: r, name: 'service-selection', profiles: { code: [] }, describe: '', services: {}, logs: 'turbo',
+      repo: r, name: 'service-selection', profiles: { code: [] }, services: {}, logs: 'turbo',
       setup: async () => 0,
       dev: () => '',
     });
@@ -416,7 +416,7 @@ describe('discovery', () => {
     git(r, 'worktree', 'add', '-q', '--detach', base, 'main');
     worktree(other, 'complete-elsewhere');
     registry.push({
-      repo: r, name: 'complete', profiles: { ios: ['sim'] }, describe: '', services: { sim: { device: 'sim' } }, logs: 'turbo', base,
+      repo: r, name: 'complete', profiles: { ios: ['sim'] }, services: { sim: { device: 'sim' } }, logs: 'turbo', base,
       setup: async () => 0,
       dev: () => '',
       mobile: { builder } as RepoProfile['mobile'],

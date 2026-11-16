@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { WT_HOME } from './env.ts';
-import { boot, emuBoot, emuReverse, openApp } from './devices.ts';
+import { boot, emuBoot, emuReverse, openApp, openUrl } from './devices.ts';
 import { allServiceNames, appWindow, portOf, profileFor, servicesOf, shareable } from './profile.ts';
 import { words } from './runs.ts';
 import { get, names, touch } from './state.ts';
@@ -130,6 +130,14 @@ export async function cmdOpen(name?: string) {
     say(`${w.name}: app opened on the emulator on :${port}`);
   }
   return 0;
+}
+
+// opens a url on one of the current worktree's devices, for a repo's login command
+export function cmdOpenUrl(device?: string, url?: string) {
+  if (!device || !url) die('usage: wt _open-url <device> <url>');
+  const w = resolve();
+  const m = profileFor(w.repo, w.path).mobile ?? die(`${w.repo} has no mobile config`);
+  return openUrl(m, device, url) ? 0 : 1;
 }
 
 const GRID = `on run argv

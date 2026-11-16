@@ -15,7 +15,7 @@ function app(dir: string, name: string, dev?: string) {
 function workspace() {
   const repo = mkdtempSync(join(tmpdir(), 'wt-apps-'));
   const profile: RepoProfile = {
-    repo, name: 'apps-test', profiles: {}, describe: '', services: {}, logs: 'turbo',
+    repo, name: 'apps-test', profiles: {}, services: {}, logs: 'turbo',
     setup: async () => 0,
     dev: (_w, _services, _ports, pkgs) => `exec pnpm exec turbo run dev ${pkgs.map((p) => `-F ${p}`).join(' ')} --concurrency=64 --ui=tui --log-file`,
   };
@@ -36,7 +36,8 @@ test('checkout dev scripts become services with independent frontend ports', () 
   expect(ports.listen('retell')).not.toBe(ports.listen('billing'));
   for (const name of ['retell', 'billing']) {
     const command = rp.services[name].command!(w, ports)!;
-    expect(command).toContain(`--filter @test/${name} dev`);
+    expect(command).toStartWith(`cd apps/${name} && `);
+    expect(command).toContain('exec npm run dev -- --port');
     expect(command).toContain(`PORT=${ports.listen(name)}`);
     expect(command).toEndWith(`--port ${ports.listen(name)}`);
     expect(command).not.toContain('turbo');
@@ -62,7 +63,7 @@ test('worker dev scripts run without pretending to listen on a web port', () => 
   const rp = profileFor(repo);
   const w = { repo, name: 'worker-test', path: repo };
   expect(rp.services.worker.port).toBeUndefined();
-  expect(rp.services.worker.command!(w, worktreePorts(rp, 2))).toContain('--filter @test/worker dev');
+  expect(rp.services.worker.command!(w, worktreePorts(rp, 2))).toBe('cd apps/worker && exec npm run dev');
   expect(rp.services.worker.command!(w, worktreePorts(rp, 2))).not.toContain('--port');
 });
 

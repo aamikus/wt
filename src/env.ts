@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const env = process.env;
 export const HOME = homedir();
@@ -16,14 +16,26 @@ if (!env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = process.platform === '
 env.ANDROID_HOME ||= join(HOME, 'Library/Android/sdk');
 for (const d of ['platform-tools', 'emulator', 'cmdline-tools/latest/bin']) env.PATH += `:${env.ANDROID_HOME}/${d}`;
 
-export const WT_HOME = env.WT_HOME || join(HOME, '.claude/wt');
+// state and logs; repo configs and the config file live in CONFIG_DIR
+export const WT_HOME = env.WT_HOME || join(env.XDG_STATE_HOME || join(HOME, '.local/state'), 'wt');
+export const CONFIG_DIR = env.WT_CONFIG || join(env.XDG_CONFIG_HOME || join(HOME, '.config'), 'wt');
+export const REPOS_DIR = join(CONFIG_DIR, 'repos');
 // the launcher wt re-runs itself through, inside tmux and login shells
 export const SELF = env.WT_SELF || join(import.meta.dir, '..', 'wt');
 // worktrunk's binary, installed under this name so wt keeps its own
 export const CORE = env.WT_CORE || 'wtcore';
-export const PROFILES_DIR = env.WT_PROFILES || join(import.meta.dir, '..', 'profiles');
 env.WORKTRUNK_CONFIG_PATH ||= join(import.meta.dir, '..', 'worktrunk.toml');
 
+// state and config from before wt used XDG directories move once
+const OLD_HOME = join(HOME, '.claude/wt');
+if (!env.WT_HOME && existsSync(OLD_HOME) && !existsSync(WT_HOME)) {
+  mkdirSync(dirname(WT_HOME), { recursive: true });
+  renameSync(OLD_HOME, WT_HOME);
+  if (existsSync(join(WT_HOME, 'config')) && !existsSync(join(CONFIG_DIR, 'config'))) {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+    renameSync(join(WT_HOME, 'config'), join(CONFIG_DIR, 'config'));
+  }
+}
 mkdirSync(WT_HOME, { recursive: true, mode: 0o700 });
 
 // KEY=value lines; the file was sourced by the bash wt, so quotes are stripped
@@ -38,4 +50,6 @@ export function readConfig(file: string): Record<string, string> {
   return out;
 }
 
-export const config = readConfig(join(WT_HOME, 'config'));
+export const config = readConfig(join(CONFIG_DIR, 'config'));
+// the config file's settings reach every command wt runs, as if exported
+for (const [k, v] of Object.entries(config)) env[k] ??= v;

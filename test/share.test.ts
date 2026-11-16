@@ -71,7 +71,7 @@ describe('proxy', () => {
 const share: RepoProfile = {
   name: 'sharetest',
   profiles: { app: ['api', 'metro'] },
-  describe: '',
+ 
   base: '/b',
   services: {
     api: { pkg: 'api', port: (k) => 8000 + k, reserves: true, share: '/health' },

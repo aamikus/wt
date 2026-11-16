@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlink
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pin, pinPulled } from '../src/envfiles.ts';
+import { writeEnv } from '../src/envfiles.ts';
 import { readConfig, WT_HOME } from '../src/env.ts';
 import { mergedProfiles, servicesOf, type RepoProfile } from '../src/profile.ts';
 import { slotFor } from '../src/slots.ts';
@@ -79,26 +79,19 @@ describe('slots', () => {
 });
 
 describe('env files', () => {
-  test('pin writes a managed file and leaves a foreign one alone', () => {
+  test('a missing or wt-written file is written whole', () => {
     const d = tmp();
-    pin(d, '.env.local', 'PORT=8001');
+    writeEnv(d, '.env.local', { PORT: '8001' });
     expect(readFileSync(join(d, '.env.local'), 'utf8')).toBe('# managed by wt\nPORT=8001\n');
-    pin(d, '.env.local', 'PORT=8002');
-    expect(readFileSync(join(d, '.env.local'), 'utf8')).toBe('# managed by wt\nPORT=8002\n');
-    writeFileSync(join(d, 'mine'), 'PORT=1\n');
-    pin(d, 'mine', 'PORT=8003');
-    expect(readFileSync(join(d, 'mine'), 'utf8')).toBe('PORT=1\n');
+    writeEnv(d, '.env.local', { PORT: '8002', URL: 'x' });
+    expect(readFileSync(join(d, '.env.local'), 'utf8')).toBe('# managed by wt\nPORT=8002\nURL=x\n');
   });
 
-  test('pinPulled replaces a key in place or appends it, and skips a missing file', () => {
+  test('a file wt did not write keeps its other lines: keys are replaced in place or appended', () => {
     const d = tmp();
-    writeFileSync(join(d, '.env'), 'A=1\nPORT=8010\nB=2\n');
-    pinPulled(d, '.env', 'PORT', '8013');
-    expect(readFileSync(join(d, '.env'), 'utf8')).toBe('A=1\nPORT=8013\nB=2\n');
-    pinPulled(d, '.env', 'URL', 'http://localhost:8013');
+    writeFileSync(join(d, '.env'), 'A=1\nPORT=8010\nB=2');
+    writeEnv(d, '.env', { PORT: '8013', URL: 'http://localhost:8013' });
     expect(readFileSync(join(d, '.env'), 'utf8')).toBe('A=1\nPORT=8013\nB=2\nURL=http://localhost:8013\n');
-    pinPulled(d, 'absent', 'PORT', '1');
-    expect(existsSync(join(d, 'absent'))).toBe(false);
   });
 });
 

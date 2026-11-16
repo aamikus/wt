@@ -2,10 +2,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// state, profiles and the default repo live in a throwaway dir, never in ~/.claude/wt
+// state, config and the default repo live in a throwaway dir, never in the user's
 const root = mkdtempSync(join(tmpdir(), 'wt-test-'));
 process.env.WT_HOME = join(root, 'home');
-process.env.WT_PROFILES = join(root, 'profiles');
+process.env.WT_CONFIG = join(root, 'config');
 process.env.WT_REPO = join(root, 'default-repo');
 
 // wtcore reads this config instead of ~/.config/worktrunk: the user config's hooks minus wt up

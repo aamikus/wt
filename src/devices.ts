@@ -5,7 +5,7 @@ import { portOf, type Mobile, type RepoProfile } from './profile.ts';
 import { del, get, has, put } from './state.ts';
 import { winState } from './tmux.ts';
 import { taskText, turboLog } from './turbolog.ts';
-import { alive, capture, detach, ok, run, say, sleep } from './util.ts';
+import { alive, capture, detach, now, ok, run, say, sleep } from './util.ts';
 import type { Wt } from './worktree.ts';
 
 export const AVD_HOME = process.env.ANDROID_AVD_HOME || join(process.env.HOME!, '.android/avd');
@@ -235,9 +235,10 @@ async function launch(w: Wt, rp: RepoProfile, slot: number, device: string, tag:
     await sleep(5000);
   }
   say(`${tag}: app opened on :${port}`);
-  if (!m.login?.enabled() || has(w.name, `${tag}.login`)) return true;
+  if (!m.login || has(w.name, `${tag}.login`)) return true;
   if (!(await waitBundled(w, rp, seen))) say(`${tag}: no bundle served after 15 min`);
-  if (!(await m.login.run(w, device, tag, (d, u) => openUrl(m, d, u)))) say(`${tag}: continuing signed out`);
+  if (await run('bash', ['-c', m.login, 'login', device, tag], { cwd: w.path })) say(`${tag}: continuing signed out`);
+  else put(w.name, `${tag}.login`, now());
   return true;
 }
 

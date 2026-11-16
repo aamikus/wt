@@ -10,6 +10,7 @@ import { startWatcher } from './idle.ts';
 import {
   defaultRepo,
   appWindow,
+  offsetKey,
   mergedProfiles,
   profileFor,
   profileNames,
@@ -24,18 +25,31 @@ import { listening, slotFor } from './slots.ts';
 import { del, get, lock, names, put, runningUp, touch, unlock } from './state.ts';
 import { newWindow, target, winState } from './tmux.ts';
 import { buildDependencies } from './turbo.ts';
-import { capture, die, now, ok, say, shq, sleep, tee, trash } from './util.ts';
+import { capture, die, now, ok, run, say, shq, sleep, tee, trash } from './util.ts';
 import { canonical, findWorktree, repoHere, resolve, worktreeAt, type Wt } from './worktree.ts';
 
 const stateLock = (n: string) => join(WT_HOME, n, 'state');
 
-async function setup(w: Wt, rp: RepoProfile) {
-  if (get(w.name, 'setup') === '0') return true;
-  put(w.name, 'setup', 'running');
-  const rc = await rp.setup(w);
-  put(w.name, 'setup', rc);
-  if (rc) say(`setup: failed with exit ${rc}`);
-  return rc === 0;
+// the worktree's setup, then that of each service it runs, each once per worktree
+async function setup(w: Wt, rp: RepoProfile, svcs: string[]) {
+  const steps: [string, () => Promise<number>][] = [
+    ['setup', () => rp.setup(w)],
+    ...svcs.filter((s) => rp.services[s]?.setup).map((s): [string, () => Promise<number>] => [`setup.${s}`, () => {
+      say(`setup: ${s}: ${rp.services[s].setup}`);
+      return run('bash', ['-c', rp.services[s].setup!], { cwd: w.path });
+    }]),
+  ];
+  for (const [key, step] of steps) {
+    if (get(w.name, key) === '0') continue;
+    put(w.name, key, 'running');
+    const rc = await step();
+    put(w.name, key, rc);
+    if (rc) {
+      say(`${key}: failed with exit ${rc}`);
+      return false;
+    }
+  }
+  return true;
 }
 
 // a slot's ports can be taken after allocation by servers wt does not own
@@ -82,8 +96,6 @@ export async function cmdUp(args: string[]) {
   for (const a of profs) if (!profileNames(rp).includes(a)) die(`no profile ${a} in ${w.repo} (profiles: ${names})`);
   if (!profs.length && !get(w.name, 'profiles')) profs.push('code');
   const svcs = servicesOf(rp, mergedProfiles(get(w.name, 'profiles'), profs));
-  const err = rp.validate?.(svcs);
-  if (err) die(err);
   for (const s of own) if (!shareable(rp, svcs).includes(s)) die(`${s} is not a shared service of this worktree's profiles, so it always runs here`);
 
   await lock(stateLock(w.name));
@@ -93,7 +105,7 @@ export async function cmdUp(args: string[]) {
     put(w.name, 'repo', w.repo);
     put(w.name, 'path', w.path);
     const ports: Record<string, number> = JSON.parse(get(w.name, 'ports') || '{}');
-    for (const s of Object.values(rp.services)) if (s.pkg && s.portOffset !== undefined) ports[s.pkg] = s.portOffset;
+    for (const [k, s] of Object.entries(rp.services)) if (s.portOffset !== undefined) ports[offsetKey(k, s)] = s.portOffset;
     put(w.name, 'ports', JSON.stringify(ports));
     put(w.name, 'profiles', mergedProfiles(get(w.name, 'profiles'), profs));
     del(w.name, 'asleep');
@@ -151,7 +163,7 @@ export async function cmdInternalUp(name: string) {
     const snap = get(w.name, 'profiles');
     const svcs = servicesOf(rp, snap);
     say(`up: ${snap}`);
-    if (!(await setup(w, rp))) rc = 1;
+    if (!(await setup(w, rp, svcs))) rc = 1;
     else if (svcs.length) {
       let slot = await slotFor(w.name);
       if (!slotFree(w, rp, slot, svcs)) {

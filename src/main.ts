@@ -4,9 +4,8 @@
 import { cmdBuild } from './build.ts';
 import { CORE } from './env.ts';
 import { clean, stdio } from './clean.ts';
-import { cmdAttach, cmdGrid, cmdLogs, cmdOpen, cmdPath, cmdRestart } from './commands.ts';
+import { cmdAttach, cmdGrid, cmdLogs, cmdOpen, cmdOpenUrl, cmdPath, cmdRestart } from './commands.ts';
 import { cmdComplete } from './complete.ts';
-import { generic } from './generic.ts';
 import { hookCreate, hookPrompt, hookRemove, hookSessionStart } from './hooks.ts';
 import { cmdIdle } from './idle.ts';
 import { cmdLs } from './inspect.ts';
@@ -46,7 +45,7 @@ function usage() {
                         worktrunk's own commands, run by ${CORE}
 
 ${profiles}
-profiles in any other repo: ${generic.describe}
+profiles in any other repo: bare, code (.env files and install), dev (code, then the dev script)
 <name> defaults to the worktree containing the current directory; a selector is an existing
 path, branch, saved environment name or unambiguous directory name from Git's worktree list.
 `);
@@ -55,9 +54,9 @@ path, branch, saved environment name or unambiguous directory name from Git's wo
 
 async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'shell-init') return cmdShellInit(argv[1]);
-  await loadProfiles();
   const here = repoHere();
   if (here) registerRepo(here);
+  loadProfiles();
   const [c = '', ...a] = argv;
   const stdin = () => Bun.stdin.text();
   switch (c) {
@@ -71,6 +70,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdDown(a[0]);
     case '_idle':
       return cmdIdle(a[0]);
+    case '_open-url':
+      return cmdOpenUrl(a[0], a[1]);
     case '_purge':
       purge(a[0] ?? '');
       return 0;

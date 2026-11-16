@@ -25,7 +25,7 @@ async function builderSync(m: Mobile, repo: string, src: string) {
     if (f) rmSync(join(m.builder, f), { force: true });
   }
   say('build: installing dependencies');
-  for (const c of m.builderSetup) if (await run(c[0], c.slice(1), { cwd: m.builder })) return false;
+  for (const c of m.builderSetup) if (await run('bash', ['-c', c], { cwd: m.builder })) return false;
   return true;
 }
 
@@ -58,7 +58,7 @@ async function buildApp(m: Mobile, fp: string) {
   const xlog = join(WT_HOME, 'xcodebuild.log');
   if (!(await ensureTemplate(m))) return false;
   say('build: expo prebuild --clean');
-  if (await run(m.prebuild.ios[0], m.prebuild.ios.slice(1), { cwd: dir, env: prebuildEnv })) return false;
+  if (await run('bash', ['-c', m.prebuild.ios], { cwd: dir, env: prebuildEnv })) return false;
   // prebuild reports a failed pod install without failing
   if (!existsSync(join(dir, 'ios', `${m.iosApp}.xcworkspace`))) {
     say('build: prebuild produced no workspace, pod install failed above');
@@ -80,7 +80,7 @@ async function buildApk(m: Mobile, fp: string) {
   const dir = join(m.builder, m.appDir);
   const glog = join(WT_HOME, 'gradle.log');
   say('build: expo prebuild --clean (android)');
-  if (await run(m.prebuild.android[0], m.prebuild.android.slice(1), { cwd: dir, env: prebuildEnv })) return false;
+  if (await run('bash', ['-c', m.prebuild.android], { cwd: dir, env: prebuildEnv })) return false;
   say(`build: gradle assembleDebug (log: ${glog})`);
   const r = capture('bash', ['-c', 'exec "$@" >"$0" 2>&1', glog, './gradlew', '--no-daemon', ':app:assembleDebug',
     '-PreactNativeArchitectures=arm64-v8a'], { cwd: join(dir, 'android') });
