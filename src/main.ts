@@ -54,6 +54,7 @@ path, branch, saved environment name or unambiguous directory name from Git's wo
 }
 
 async function main(argv: string[]): Promise<number> {
+  if (argv[0] === 'shell-init') return cmdShellInit(argv[1]);
   await loadProfiles();
   const here = repoHere();
   if (here) registerRepo(here);
@@ -71,7 +72,7 @@ async function main(argv: string[]): Promise<number> {
     case '_idle':
       return cmdIdle(a[0]);
     case '_purge':
-      purge(a[0]);
+      purge(a[0] ?? '');
       return 0;
     case 'ls':
       return cmdLs(a);
@@ -81,8 +82,6 @@ async function main(argv: string[]): Promise<number> {
       return cmdComplete(a);
     case 'cd':
       die(`cd runs in your shell: add eval "$(wt shell-init)" to its rc file, or cd "$(wt path ${a[0] ?? ''})"`);
-    case 'shell-init':
-      return cmdShellInit(a[0]);
     case 'attach':
       return cmdAttach(a);
     case 'logs':

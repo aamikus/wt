@@ -2,18 +2,24 @@ import { join } from 'node:path';
 import { WT_HOME } from './env.ts';
 import { appWindow, type Ports, type RepoProfile } from './profile.ts';
 import { del, get, put } from './state.ts';
-import { newWindow, tmux, winState } from './tmux.ts';
+import { newWindow, target, tmux, winState } from './tmux.ts';
 import { devPackages } from './turbo.ts';
 import { say, shq } from './util.ts';
 import type { Wt } from './worktree.ts';
 
-// tmux starts a window from its server's environment, not this process's; PATH carries the
-// caller's node and package managers into shells whose profile does not set them up
+// tmux starts a window from its server's environment, not this process's. WT_PATH carries the
+// caller's PATH
 export const fwdEnv = () =>
-  Object.entries(process.env)
-    .filter(([k]) => k === 'PATH' || k === 'APP_ENV' || (k.startsWith('WT_') && k !== 'WT_SELF' && k !== 'WT_LOGIN'))
+  [
+    ...Object.entries(process.env).filter(([k]) => k === 'APP_ENV' || (k.startsWith('WT_') && !['WT_SELF', 'WT_LOGIN', 'WT_PATH'].includes(k))),
+    ['WT_PATH', process.env.PATH],
+  ]
     .map(([k, v]) => ` ${k}=${shq(v ?? '')}`)
     .join('');
+
+// a login shell running cmd; the caller's PATH goes after the profile's, so the node and package
+// managers the profile sets up win and the caller's fill in what it lacks
+export const loginShell = (cmd: string) => `bash -lc ${shq(`PATH="$PATH:$WT_PATH"; ${cmd}`)}`;
 
 export const words = (s: string) => s.split(' ').filter(Boolean);
 
@@ -40,7 +46,7 @@ export async function startRun(w: Wt, st: string, rp: RepoProfile, win: string, 
     pkgs = all.filter((p) => !elsewhere.includes(p) && !taken.includes(p) && !separate.includes(p));
   }
   const cmd = app?.command ? app.command(w, ports) : rp.dev(w, services.filter((s) => !rp.services[s]?.command), ports, pkgs);
-  const t = `=${w.name}:${win}`;
+  const t = target(w.name, win);
   const state = winState(w.name, win);
   if (!cmd) {
     if (cmd === undefined && state !== 'none') {
@@ -60,7 +66,7 @@ export async function startRun(w: Wt, st: string, rp: RepoProfile, win: string, 
   if (rp.logs === 'pane' || app?.command) tmux('pipe-pane', '-o', '-t', t, `cat >>${shq(join(WT_HOME, st, `${win}.log`))}`);
   put(st, `${win}.cmd`, cmd);
   put(st, `run.${win}`, pkgs.join(' '));
-  tmux('respawn-pane', '-k', '-t', t, `env${fwdEnv()} bash -lc ${shq(cmd)}`);
+  tmux('respawn-pane', '-k', '-t', t, `env${fwdEnv()} ${loginShell(cmd)}`);
   say(`${win}: ${cmd}`);
   return true;
 }

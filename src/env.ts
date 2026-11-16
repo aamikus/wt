@@ -12,8 +12,7 @@ for (const k of ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PROJECT_DIR']) 
 // node comes from the login shells wt runs pnpm in; nvm via BASH_ENV costs every bash ~1 s
 delete env.BASH_ENV;
 // hook and gui environments carry no locale, and cocoapods dies on ASCII-8BIT paths
-env.LANG ||= 'en_US.UTF-8';
-env.LC_ALL ||= 'en_US.UTF-8';
+if (!env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = process.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8';
 env.ANDROID_HOME ||= join(HOME, 'Library/Android/sdk');
 for (const d of ['platform-tools', 'emulator', 'cmdline-tools/latest/bin']) env.PATH += `:${env.ANDROID_HOME}/${d}`;
 
@@ -25,7 +24,7 @@ export const CORE = env.WT_CORE || 'wtcore';
 export const PROFILES_DIR = env.WT_PROFILES || join(import.meta.dir, '..', 'profiles');
 env.WORKTRUNK_CONFIG_PATH ||= join(import.meta.dir, '..', 'worktrunk.toml');
 
-mkdirSync(WT_HOME, { recursive: true });
+mkdirSync(WT_HOME, { recursive: true, mode: 0o700 });
 
 // KEY=value lines; the file was sourced by the bash wt, so quotes are stripped
 export function readConfig(file: string): Record<string, string> {

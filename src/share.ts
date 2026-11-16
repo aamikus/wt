@@ -4,9 +4,9 @@ import { SELF, WT_HOME } from './env.ts';
 import { baseSession, baseSync, defaultRef, ensureBase } from './base.ts';
 import { appWindow, basePorts, profileFor, servicesOf, shareable, worktreePorts } from './profile.ts';
 import { proxy } from './proxy.ts';
-import { fwdEnv, startRun, words } from './runs.ts';
+import { fwdEnv, loginShell, startRun, words } from './runs.ts';
 import { del, get, put } from './state.ts';
-import { newWindow, sessAlive, tmux, winState } from './tmux.ts';
+import { newWindow, sessAlive, target, tmux, winState } from './tmux.ts';
 import { affected } from './turbo.ts';
 import { capture, say, shq, sleep, tee } from './util.ts';
 import { resolve, type Wt } from './worktree.ts';
@@ -23,9 +23,9 @@ async function healthy(port: number, path: string) {
 }
 
 export function startShare(w: Wt) {
-  const t = `=${w.name}:share`;
+  const t = target(w.name, 'share');
   const st = winState(w.name, 'share');
-  const cmd = `WT_LOGIN=1${fwdEnv()} bash -lc ${shq(`${SELF} _share ${w.name}`)}`;
+  const cmd = `WT_LOGIN=1${fwdEnv()} ${loginShell(`${shq(SELF)} _share ${w.name}`)}`;
   if (st === 'none') {
     newWindow(w, 'share', cmd);
     tmux('set-option', '-w', '-t', t, 'remain-on-exit', 'on');

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { SELF, WT_HOME } from './env.ts';
 import { derivedData, emuSerial, purgeDevices, upEmu, upSim } from './devices.ts';
 import { summary } from './inspect.ts';
@@ -18,14 +18,14 @@ import {
   worktreePorts,
   type RepoProfile,
 } from './profile.ts';
-import { fwdEnv, startRun, words } from './runs.ts';
+import { fwdEnv, loginShell, startRun, words } from './runs.ts';
 import { startShare } from './share.ts';
 import { listening, slotFor } from './slots.ts';
-import { del, get, lock, put, runningUp, touch, unlock } from './state.ts';
-import { newWindow, winState } from './tmux.ts';
+import { del, get, lock, names, put, runningUp, touch, unlock } from './state.ts';
+import { newWindow, target, winState } from './tmux.ts';
 import { buildDependencies } from './turbo.ts';
 import { capture, die, now, ok, say, shq, sleep, tee, trash } from './util.ts';
-import { findWorktree, repoHere, resolve, worktreeAt, type Wt } from './worktree.ts';
+import { canonical, findWorktree, repoHere, resolve, worktreeAt, type Wt } from './worktree.ts';
 
 const stateLock = (n: string) => join(WT_HOME, n, 'state');
 
@@ -110,7 +110,7 @@ export async function cmdUp(args: string[]) {
     }
     if (servicesOf(rp, cur).length) slot = await slotFor(w.name);
     put(w.name, 'up.pid', `starting:${now()}`);
-    newWindow(w, 'up', `WT_LOGIN=1${fwdEnv()} bash -lc ${shq(`${SELF} _up ${w.name}`)}`);
+    newWindow(w, 'up', `WT_LOGIN=1${fwdEnv()} ${loginShell(`${shq(SELF)} _up ${w.name}`)}`);
   } finally {
     unlock(stateLock(w.name));
   }
@@ -193,7 +193,7 @@ export async function cmdInternalUp(name: string) {
 export function cmdDown(name?: string, quiet = false) {
   const w = resolve(name);
   const tell = quiet ? () => {} : say;
-  if (ok('tmux', ['kill-session', '-t', `=${w.name}`])) tell(`${w.name}: stopped tmux session`);
+  if (ok('tmux', ['kill-session', '-t', target(w.name)])) tell(`${w.name}: stopped tmux session`);
   del(w.name, 'up.pid', 'shares', 'share.pid');
   baseSync(profileFor(w.repo));
   const u = get(w.name, 'sim');
@@ -205,15 +205,20 @@ export function cmdDown(name?: string, quiet = false) {
   return 0;
 }
 
-// everything wt owns for a worktree: tmux session, simulator, avd, DerivedData, state
-export function purge(name: string, cwd = process.cwd(), path?: string) {
-  if (!name || name.includes('/')) die('purge needs a name');
-  const w = findWorktree(name, cwd) ?? (path ? { name, path, repo: repoHere(cwd)! } : resolve(name, cwd));
-  capture('tmux', ['kill-session', '-t', `=${w.name}`]);
-  stopLeftovers([w.path]);
-  const paths = purgeDevices(w.name);
-  for (const d of derivedData()) if (d.workspace.startsWith(`${w.path}/`)) paths.push(d.dir);
+// the environment whose worktree is at path
+const stateAt = (path: string) => names().find((n) => get(n, 'path') && canonical(get(n, 'path')) === canonical(path));
+
+// everything wt owns for the worktree at path: tmux session, processes, simulator, avd,
+// DerivedData, state. n names its environment when the state predates saved paths
+export function purge(path: string, n = stateAt(path)) {
+  if (!isAbsolute(path)) die('purge needs an absolute worktree path');
+  if (n) capture('tmux', ['kill-session', '-t', target(n)]);
+  stopLeftovers([path]);
+  const paths = n ? purgeDevices(n) : [];
+  for (const d of derivedData()) if (d.workspace.startsWith(`${path}/`)) paths.push(d.dir);
   trash(paths);
-  rmSync(join(WT_HOME, w.name), { recursive: true, force: true });
-  baseSync(profileFor(w.repo));
+  if (!n) return;
+  const repo = get(n, 'repo');
+  rmSync(join(WT_HOME, n), { recursive: true, force: true });
+  if (repo) baseSync(profileFor(repo));
 }

@@ -19,6 +19,6 @@ writeFileSync(
 copy = "wtcore step copy-ignored --require-include"
 
 [pre-remove]
-env = "${wt} _purge {{ worktree_name }}"
+env = "${wt} _purge {{ worktree_path }}"
 `,
 );

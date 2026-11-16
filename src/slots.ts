@@ -40,5 +40,5 @@ export async function slotFor(n: string, isListening?: Listening) {
   } finally {
     unlock(l);
   }
-  die('no free slot');
+  die('no free slot: wt ls shows the environments holding one, wt clean --yes frees those of removed worktrees');
 }

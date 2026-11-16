@@ -138,7 +138,9 @@ export function trash(paths: string[], prefix = 'wt-trash') {
   for (const p of paths) {
     try {
       renameSync(p, `${t}/${basename(p)}`);
-    } catch {}
+    } catch {
+      detach('rm', ['-rf', p]);
+    }
   }
   detach('rm', ['-rf', t]);
   return t;

@@ -48,11 +48,16 @@ export const generic: RepoProfile = {
       say('dev: no lockfile, so no dev script to run');
       return false;
     }
-    if (!JSON.parse(readFileSync(join(w.path, 'package.json'), 'utf8')).scripts?.dev) {
+    const script: string | undefined = JSON.parse(readFileSync(join(w.path, 'package.json'), 'utf8')).scripts?.dev;
+    if (!script) {
       say('dev: package.json has no dev script');
       return false;
     }
+    const port = ports.listen('dev');
     const appEnv = process.env.APP_ENV ? ` APP_ENV=${shq(process.env.APP_ENV)}` : '';
-    return `PORT=${ports.listen('dev')}${appEnv} exec ${pm} run dev`;
+    // vite ignores PORT; npm alone needs -- before a script's own flags
+    const vite = /^vite\b/.test(script) && !/^vite\s+build\b/.test(script);
+    const flags = vite ? `${pm === 'npm' ? ' --' : ''} --port ${port} --strictPort` : '';
+    return `PORT=${port}${appEnv} exec ${pm} run dev${flags}`;
   },
 };

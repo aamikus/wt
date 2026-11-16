@@ -7,7 +7,7 @@ import { bundledCount, emuSerial, simDevices, simState } from './devices.ts';
 import { AGENTS, profileDirs, readProcs, readSessions, sessionDirs, under } from './procs.ts';
 import { profileFor, type RepoProfile } from './profile.ts';
 import { get, put, runningUp } from './state.ts';
-import { newWindow, winState } from './tmux.ts';
+import { attached, newWindow, winState } from './tmux.ts';
 import { capture, detach, lines, now, say, shq, sleep } from './util.ts';
 import { resolve, type Wt } from './worktree.ts';
 import { fwdEnv } from './runs.ts';
@@ -27,7 +27,7 @@ export interface Probe {
   // the newest a claude session in the worktree did something or was looked at
   sessionAt: number;
   agentCpu: number;
-  // the user is interacting with one of this worktree's devices
+  // the user has the session open or is interacting with one of this worktree's devices
   focused: boolean;
 }
 
@@ -89,7 +89,7 @@ function probe(w: Wt, rp: RepoProfile): Probe {
     bundled: rp.mobile ? bundledCount(w, rp) : 0,
     sessionAt: sessionAt(w.path),
     agentCpu: agentCpu(w.path),
-    focused: userOnDevice(w.name),
+    focused: attached(w.name) || userOnDevice(w.name),
   };
 }
 

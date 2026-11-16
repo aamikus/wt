@@ -5,7 +5,7 @@ import { boot, emuBoot, emuReverse, openApp } from './devices.ts';
 import { allServiceNames, appWindow, portOf, profileFor, servicesOf, shareable } from './profile.ts';
 import { words } from './runs.ts';
 import { get, names, touch } from './state.ts';
-import { sessAlive, tmux, winState } from './tmux.ts';
+import { sessAlive, target, tmux, winState } from './tmux.ts';
 import { followTask, taskText, turboLog } from './turbolog.ts';
 import { capture, die, interactive, out, say } from './util.ts';
 import { checkoutAt, findWorktree, resolve, type Wt } from './worktree.ts';
@@ -42,7 +42,7 @@ export function cmdAttach(args: string[]) {
     if (app) kw = appWindow(app);
   }
   if (!kw && winState(w.name, 'dev') !== 'none') kw = 'dev';
-  const t = `=${w.name}${kw ? `:${kw}` : ''}`;
+  const t = target(w.name, kw || undefined);
   return interactive('tmux', process.env.TMUX ? ['switch-client', '-t', t] : ['attach', '-t', t]);
 }
 
@@ -99,7 +99,7 @@ export function cmdRestart(args: string[]) {
   const wins = ['dev', ...shareable(rp, Object.keys(rp.services)), ...Object.keys(rp.services).filter((s) => rp.services[s]?.command).map(appWindow)].filter((x) => winState(w.name, x) !== 'none');
   if (!wins.length) die(`${w.name} has no dev run, use wt up`);
   touch(w.name);
-  for (const x of wins) tmux('respawn-pane', '-k', '-t', `=${w.name}:${x}`);
+  for (const x of wins) tmux('respawn-pane', '-k', '-t', target(w.name, x));
   say(`${w.name}: restarted ${wins.join(', ')}`);
   return 0;
 }
@@ -159,8 +159,7 @@ end run`;
 // panes fill top-left, top-right, bottom-left, bottom-right
 export function cmdGrid() {
   if (process.platform !== 'darwin') die('grid needs iTerm2 on macOS');
-  const known = new Set(names());
-  const sessions = capture('tmux', ['ls', '-F', '#S']).stdout.split('\n').filter((s) => known.has(s));
+  const sessions = names().filter((n) => sessAlive(n));
   if (!sessions.length) die('no worktree has a tmux session, run wt up');
   capture('osascript', ['-', ...sessions.slice(0, 4)], { input: GRID });
   return 0;

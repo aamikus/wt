@@ -12,6 +12,7 @@ import { taskLine, taskText, turboLog } from '../src/turbolog.ts';
 import { Die, now, shq } from '../src/util.ts';
 import { idleMinutes, sessionAt, tick } from '../src/idle.ts';
 import { foreignDeps } from '../src/devices.ts';
+import { purge } from '../src/up.ts';
 import { table } from '../src/inspect.ts';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'wt-'));
@@ -250,4 +251,17 @@ describe('misc', () => {
     expect(code).toBe(1);
     expect(err).toContain('no profile has a dev client');
   }, 30000);
+});
+
+describe('purge', () => {
+  test('takes only the environment saved for that path, never one that shares its name', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'wt-purge-')));
+    put('fix-ci', 'path', join(root, 'a/fix-ci'));
+    put('fix-ci', 'repo', join(root, 'a'));
+    purge(join(root, 'b/fix-ci'));
+    expect(get('fix-ci', 'path')).toBe(join(root, 'a/fix-ci'));
+    purge(join(root, 'a/fix-ci'));
+    expect(existsSync(join(WT_HOME, 'fix-ci'))).toBe(false);
+    expect(() => purge('fix-ci')).toThrow(Die);
+  });
 });

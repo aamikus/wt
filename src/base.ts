@@ -4,11 +4,11 @@ import { WT_HOME } from './env.ts';
 import { basePorts, shareable, type RepoProfile } from './profile.ts';
 import { startRun } from './runs.ts';
 import { del, get, lock, names, put, unlock } from './state.ts';
-import { sessAlive, tmux, winState } from './tmux.ts';
+import { sessAlive, target, tmux, winState } from './tmux.ts';
 import { alive, capture, exec, lines, run, say, trash } from './util.ts';
 import type { Wt } from './worktree.ts';
 
-export const baseSession = (rp: RepoProfile) => `wt-base-${rp.name}`;
+export const baseSession = (rp: RepoProfile) => `base-${rp.name}`;
 // a dot dir stays out of names(), so clean never takes the base for a worktree that is gone
 export const baseState = (rp: RepoProfile) => `.base-${rp.name}`;
 export const baseWt = (rp: RepoProfile): Wt => ({ repo: rp.repo!, name: baseSession(rp), path: rp.base! });
@@ -51,7 +51,7 @@ export async function ensureBase(rp: RepoProfile, mb: string) {
       if ((await exec('git', ['merge-base', '--is-ancestor', mb, 'HEAD'], { cwd: b.path })).code) return false;
     }
     if (get(st, 'setup') !== '0') {
-      if (winState(b.name, 'dev') !== 'none') tmux('kill-window', '-t', `=${b.name}:dev`);
+      if (winState(b.name, 'dev') !== 'none') tmux('kill-window', '-t', target(b.name, 'dev'));
       put(st, 'setup', 'running');
       const rc = await rp.setup(b);
       put(st, 'setup', rc);
@@ -75,7 +75,7 @@ export function baseSync(rp: RepoProfile) {
     return get(n, 'repo') === rp.repo && get(n, 'shares') && pid > 0 && alive(pid);
   });
   if (sharing) return;
-  tmux('kill-session', '-t', `=${baseSession(rp)}`);
+  tmux('kill-session', '-t', target(baseSession(rp)));
   del(baseState(rp), 'dev.cmd', 'run.dev');
   say('base: stopped, no worktree shares it');
 }

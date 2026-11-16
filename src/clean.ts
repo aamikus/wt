@@ -147,8 +147,8 @@ export async function clean(args: string[], cwd: string, io: Io, given: Partial<
   }
 
   const going: Row[] = [];
-  // worktree names whose wt environment goes, and leftover paths outside any worktree
-  const finalPurge: { name: string; path: string }[] = [];
+  // worktree paths whose wt environment goes, and leftover paths outside any worktree
+  const finalPurge: { path: string; name?: string }[] = [];
   const finalLeftovers: string[] = [];
 
   const dirs = existsSync(wtdir) ? readdirSync(wtdir, { withFileTypes: true }).filter((d) => d.isDirectory()) : [];
@@ -160,7 +160,7 @@ export async function clean(args: string[], cwd: string, io: Io, given: Partial<
     else if (why) staying.push(['orphan dir', e.name, `in use — ${why}`]);
     else {
       finalLeftovers.push(d);
-      finalPurge.push({ name: e.name, path: d });
+      finalPurge.push({ path: d });
       const size = capture('du', ['-sh', d]).stdout.split('\t')[0];
       going.push(['orphan dir', e.name, `not a git worktree, ${size} of leftovers`]);
     }
@@ -169,8 +169,8 @@ export async function clean(args: string[], cwd: string, io: Io, given: Partial<
   // this repo's wt environments whose worktree is already gone
   for (const n of names()) {
     const p = get(n, 'path') || join(wtdir, n);
-    if (existsSync(p) || get(n, 'repo') !== root || finalPurge.some((w) => w.name === n)) continue;
-    finalPurge.push({ name: n, path: p });
+    if (existsSync(p) || get(n, 'repo') !== root || finalPurge.some((w) => w.path === p)) continue;
+    finalPurge.push({ path: p, name: n });
     going.push(['wt env', n, 'worktree gone, tmux session, simulator and emulator go too']);
   }
 
@@ -226,7 +226,7 @@ export async function clean(args: string[], cwd: string, io: Io, given: Partial<
     return 0;
   }
   // purge first: DerivedData is matched by the worktree path before the dir moves away
-  for (const w of finalPurge) purge(w.name, root, w.path);
+  for (const w of finalPurge) purge(w.path, w.name);
   if (finalLeftovers.length) {
     const t = trash(finalLeftovers, 'wt-clean');
     io.out(`removed ${finalLeftovers.length} leftover(s), ${t} deleting in the background\n`);
