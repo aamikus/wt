@@ -3,7 +3,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { HOME } from './env.ts';
-import { writeEnv } from './envfiles.ts';
+import { managed, writeEnv } from './envfiles.ts';
 import type { Mobile, Ports, RepoProfile, Service } from './profile.ts';
 import { capture, lines, run, say, shq } from './util.ts';
 import type { Wt } from './worktree.ts';
@@ -146,15 +146,18 @@ function service(name: string, c: ServiceConfig, configDir: string): Service {
   return s;
 }
 
-// a .env-like gitignored file or directory of the main checkout matching a copy glob
+// a .env-like gitignored file or directory of the main checkout matching a copy glob; a file wt
+// manages holds the main checkout's ports and is written afresh by the worktree's own services
 function copyIgnored(w: Wt, globs: string[]) {
   // --directory keeps git from walking ignored trees like node_modules
   const ignored = lines(capture('git', ['-C', w.repo, 'ls-files', '-oi', '--exclude-standard', '--directory']).stdout);
   const matchers = globs.map((g) => new Bun.Glob(g));
   for (const f of ignored.map((f) => f.replace(/\/$/, ''))) {
     if (!matchers.some((m) => m.match(f)) || existsSync(join(w.path, f))) continue;
+    const dir = statSync(join(w.repo, f)).isDirectory();
+    if (!dir && managed(join(w.repo, f))) continue;
     mkdirSync(dirname(join(w.path, f)), { recursive: true });
-    if (statSync(join(w.repo, f)).isDirectory()) cpSync(join(w.repo, f), join(w.path, f), { recursive: true });
+    if (dir) cpSync(join(w.repo, f), join(w.path, f), { recursive: true });
     else copyFileSync(join(w.repo, f), join(w.path, f));
     say(`setup: copied ${f}`);
   }

@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configRepo, fromConfig, remoteId } from '../src/config.ts';
+import { writeEnv } from '../src/envfiles.ts';
 import { profileFor, registry, worktreePorts } from '../src/profile.ts';
 
 function repo() {
@@ -68,6 +69,18 @@ setup = "{config}/prepare.sh"
   const port = worktreePorts(rp, 2).listen('app');
   expect(rp.services.app.command!(w, worktreePorts(rp, 2))).toBe(`export PORT=${port}; cd app && exec bun run real`);
   expect(rp.services.app.setup).toBe('/cfg/prepare.sh');
+});
+
+test('setup copies the main checkout\'s ignored env files, but not those wt writes with its own ports', async () => {
+  const r = repo();
+  Bun.spawnSync(['git', 'init', '-q', r]);
+  writeFileSync(join(r, '.gitignore'), '.env*\n');
+  writeFileSync(join(r, 'apps/api/.env'), 'SECRET=1\n');
+  writeEnv(r, 'apps/web/.env.local', { API_URL: 'http://localhost:8002' });
+  const path = realpathSync(mkdtempSync(join(tmpdir(), 'wt-config-')));
+  expect(await fromConfig('shop', { install: false }, '/cfg', r).setup({ repo: r, name: 'n', path })).toBe(0);
+  expect(readFileSync(join(path, 'apps/api/.env'), 'utf8')).toBe('SECRET=1\n');
+  expect(existsSync(join(path, 'apps/web/.env.local'))).toBe(false);
 });
 
 test('a remote matches the checkout whose origin it names, in any url form', () => {
